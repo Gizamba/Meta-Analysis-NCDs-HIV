@@ -1,0 +1,835 @@
+---
+title: "NCD_HIV SystematicReview_Code"
+author: "JMG"
+date: "2022-05-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading libraries
+
+```{r}
+library(readxl)
+library(ggplot2)
+library(ggpubr)
+library(meta)
+library(metasens)
+library(metafor)
+library(metaforest)
+library(dplyr)
+```
+
+## Loading data sets
+
+```{r}
+## Dataset with obesity articles
+Obes <- read_excel("D:/AXA.Researh/ScR/AXA_NCD/NCD_HIV/Datasets/NCD_HIV_rawdata.xlsx", 
+                                              sheet = "DA1")
+View(Obes)
+
+## Dataset with HPT articles
+HPT <- read_excel("D:/AXA.Researh/ScR/AXA_NCD/NCD_HIV/Datasets/NCD_HIV_rawdata.xlsx", 
+                                              sheet = "DA2")
+View(HPT)
+
+## Dataset with Diabetes articles
+diabetes <- read_excel("D:/AXA.Researh/ScR/AXA_NCD/NCD_HIV/Datasets/NCD_HIV_rawdata.xlsx", 
+                                              sheet = "DA3")
+View(diabetes)
+```
+
+## Combine all the 3 datasets
+
+```{r}
+NCD.dat <- rbind(Obes, HPT, diabetes)
+View(NCD.dat)
+
+str(NCD.dat) #explore structure of the combined dataset
+
+NCD.dat[,c(1,2,4:8,11:14)] <- lapply(NCD.dat[,c(1,2,4:8,11:14)] , factor) #coerce some variables
+
+summary(NCD.dat) ##summary statistics
+
+
+```
+## Calculate the prevalence and 95% CI
+```{r}
+## calculate the prevalence
+NCD.dat <- NCD.dat%>%
+  mutate(Prevalence = round((N/size)*100,1))
+
+## Plot prevalence against Year of data collection for each NCD
+
+plot1<-ggplot(NCD.dat, aes(x=Collection, y=Prevalence)) +
+  geom_point() +
+  theme_classic()+
+  scale_x_continuous(breaks = scales::pretty_breaks(n=8), expand = c(0.1,0))+
+  facet_wrap(~NCD, ncol = 2)+
+  labs(x="Year of Data collection",y="Prevalence (%)")+
+  theme(
+    axis.title.x = element_text(size = 9,face = "bold"),
+    axis.text.y = element_text(size = 9,face = "bold", color = "black"),
+    axis.text.x = element_text(size = 9, face = "bold",color = "black"),
+    axis.title.y = element_text(size = 9, face = "bold"),
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 9,face = "bold"),
+    strip.text = element_text(size=9, face = "bold"))+
+  geom_smooth(method = lm)+
+  stat_cor(method = "spearman"); plot1
+
+## save the plot as .tiff flie  
+ggsave(plot1, filename = "plot1.tiff", width = 10, height = 6,dpi = 600)
+
+
+## 95% CI for prevalence
+#### margin of error
+x<- NCD.dat$Prevalence_2*(1- NCD.dat$Prevalence_2)/NCD.dat$size
+y <- sqrt(x)
+z <- qnorm(0.975)
+marginErr <- y*z
+NCD.dat$marginErr <- marginErr
+NCD.dat$SE <- round (y*100,3)
+
+
+## 95% CI lower interval
+NCD.dat$Lower_CI <- round((NCD.dat$Prevalence_2 - NCD.dat$marginErr)*100,2)
+
+## 95% CI Upper interval
+NCD.dat$Upper_CI <- round((NCD.dat$Prevalence_2 + NCD.dat$marginErr)*100,2)
+
+NCD.dat$index <- seq(1:116)
+```
+
+## Plot: Prevalence of each NCD by Author and study setting
+```{r}
+#### obesity prevalence
+obes_plot <-NCD.dat%>%
+  filter(NCD=="obesity")%>%
+  ggplot(data=., aes(y=index, x=Prevalence, xmin=Lower_CI, xmax=Upper_CI, fill=Setting,
+                     color=Setting)) +
+  geom_point() +
+  scale_fill_manual(values = c("#C3D7A4", "#52854C", "#4E84C4", "#293352"))+
+  geom_errorbarh(height=.1) +
+  scale_y_continuous(name = "", breaks=1:nrow(NCD.dat), labels=NCD.dat$Author, expand = c(0,0.3))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n=8), expand = c(0.1,0))+
+  labs(x='Prevalence of obesity', y = 'Study') +
+  geom_vline(xintercept=0, color='black', linetype='dashed', alpha=.5) +
+  theme_classic()
+obes_plot
+
+## save as .tiff file
+ggsave(obes_plot, filename = "obes_plot.tiff", width = 10, height = 6,dpi = 600)
+
+
+#### HPT prevalence
+HPT_plot <-NCD.dat%>%
+  filter(NCD=="HPT")%>%
+  ggplot(data=., aes(y=index, x=Prevalence, xmin=Lower_CI, xmax=Upper_CI, fill=Setting,
+                     color=Setting)) +
+  geom_point() +
+  scale_fill_manual(values = c("#C3D7A4", "#52854C", "#4E84C4", "#293352"))+
+  geom_errorbarh(height=.1) +
+  scale_y_continuous(name = "", breaks=1:nrow(NCD.dat), labels=NCD.dat$Author, expand = c(0,0.3))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n=8), expand = c(0.1,0))+
+  labs(x='Prevalence of HPT', y = 'Study') +
+  geom_vline(xintercept=0, color='black', linetype='dashed', alpha=.5) +
+  theme_classic(); HPT_plot
+
+## save as .tiff file
+ggsave(HPT_plot, filename = "HPT_plot.tiff", width = 10, height = 6,dpi = 600)
+
+
+#### diabetes prevalence
+DM_plot <-NCD.dat%>%
+  filter(NCD=="diabetes")%>%
+  ggplot(data=., aes(y=index, x=Prevalence, xmin=Lower_CI, xmax=Upper_CI, fill=Setting,
+                     color=Setting)) +
+  geom_point() +
+  scale_fill_manual(values = c("#C3D7A4", "#52854C", "#4E84C4", "#293352"))+
+  geom_errorbarh(height=.1) +
+  scale_y_continuous(name = "", breaks=1:nrow(NCD.dat), labels=NCD.dat$Author, expand = c(0,0.3))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n=8), expand = c(0.1,0))+
+  labs(x='Prevalence of diabetes', y = 'Study') +
+  geom_vline(xintercept=0, color='black', linetype='dashed', alpha=.5) +
+  theme_classic()
+DM_plot
+
+ggsave(DM_plot, filename = "DM_plot.tiff", width = 10, height = 6,dpi = 600)
+
+```
+
+
+
+Summarize and plot number of studies by study setting for each NCD
+```{r}
+StudiesPerSetting <- NCD.dat%>%
+  group_by(NCD,Setting)%>%
+  summarise(N=n())
+StudiesPerSetting  
+
+
+plot3 <- ggplot(aes(x=Setting, y=N, fill=NCD), data = StudiesPerSetting)+
+  geom_col(position = "dodge", width = 0.5, )+
+  theme_classic()+
+  scale_fill_manual(values = c("red","blue","green"))+
+ labs(x="Study Setting",y="Number of studies")+
+ scale_y_continuous(breaks = scales:: pretty_breaks(n=8), expand = c(0,0))+
+  theme(
+    axis.title.x = element_text(size = 9,face = "bold"),
+    axis.text.y = element_text(size = 9,face = "bold", color = "black"),
+    axis.text.x = element_text(size = 9, face = "bold",color = "black"),
+    axis.title.y = element_text(size = 9, face = "bold"),
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 9,face = "bold")); plot3
+
+## save the plot as .tiff file
+ggsave(plot3, filename = "plot3.tiff", width = 10, height = 6,dpi = 600)
+```
+
+## Categorize years of data collection: <=2012, and >2012
+```{r}
+summary(NCD.dat$Collection)
+NCD.dat$Study_Period <- ifelse(NCD.dat$Collection<=2012,0,1)
+table(NCD.dat$Study_Period)
+NCD.dat$Study_Period<- factor(NCD.dat$Study_Period, levels = c(0,1),
+                                labels = c("2000-2012","2013-2022"))
+```
+
+## Customise the levels in pregnant variable as "NA-(men)","Not pregnant","pregnant/PP"
+```{r}
+#####pregnancy
+levels(NCD.dat$pregnant)
+NCD.dat$pregnant <- as.character(NCD.dat$pregnant)
+NCD.dat$pregnant[is.na(NCD.dat$pregnant)]<- 0
+NCD.dat$pregnant <- as.factor(NCD.dat$pregnant)
+NCD.dat$pregnant <- factor(NCD.dat$pregnant, 
+                           levels = c("0","no","yes"),
+                           labels = c("NA-(men)","Not pregnant","pregnant/PP"))
+```
+
+# META-ANALYSIS & FOREST PLOTS
+## DIABETES
+```{r}
+## Subset out articles on diabetes
+diabetes.1 <- NCD.dat%>%filter(NCD=="diabetes")
+
+## Summarize the data by sub-groups/ variables of interest
+diabetes.1 <- diabetes.1%>%
+  group_by(Author, Setting, Province,Study_Period, `Diagnostic criteria`,
+           ROB, ART_status)%>%
+  summarise(N=sum(N), size=sum(size))
+View(diabetes.1) # view the dataset
+
+
+#### remove studies that did not report ART status unreported
+diabetes.ART<-diabetes.1%>%filter(ART_status!="unreported")
+
+##### meta analysis for diabetes: when studies are subgrouped by ART status (initiated Vs not initiated)
+pool.DM.ART <- metaprop(event = diabetes.ART$N,n=diabetes.ART$size,
+                         fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                         sm = "PLOGIT", hakn = T, studlab = diabetes.ART$Author,
+                         overall = T, overall.hetstat = T,
+                         method.bias = "Egger",backtransf = T,
+                         text.random = "RE Prevalence",
+                         subgroup = diabetes.ART$ART_status,
+                         test.subgroup = T, pscale = 100, )
+summary(pool.DM.ART)
+
+
+###forest plot for diabetes subgroup ART status
+ART_forest_DM <- forest.meta(pool.DM.ART,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,40), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+## save the forest plot
+png(file = "ART_forest-DM.png", width = 2250, height = 2600, res = 300)
+ART_forest_DM
+dev.off()
+
+
+##### meta analysis for diabetes: studies subgrouped by diagnostic criteria
+pool.DM.diag <- metaprop(event = diabetes.1$N,n=diabetes.1$size,
+                        fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                        sm = "PLOGIT", hakn = T, studlab = diabetes.1$Author,
+                        overall = T, overall.hetstat = T,
+                        method.bias = "Egger",backtransf = T,
+                        text.random = "RE Prevalence",
+                        subgroup = diabetes.1$`Diagnostic criteria`,
+                        test.subgroup = T, pscale = 100, )
+summary(pool.DM.diag)
+
+###forest plot for diabetes subgroup diagnostics
+
+Diagnostics_forest_DM <- forest.meta(pool.DM.diag,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,100), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+## save the forest plot
+png(file = "Diagnositcs_forest-DM.png", width = 2250, height = 2600, res = 300)
+Diagnostics_forest_DM
+dev.off()
+
+
+##### meta analysis for diabetes: studies subgrouped by setting: urban vs rural
+diabetes.1.setting <- diabetes.1%>%filter(Setting!="Urban_Rural")
+pool.DM.3 <- metaprop(event = diabetes.1.setting$N,n=diabetes.1.setting$size,
+                     fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                     sm = "PLOGIT", hakn = T, studlab = diabetes.1.setting$Author,
+                     overall = T, overall.hetstat = T,
+                     method.bias = "Egger",backtransf = T,
+                     text.random = "RE Prevalence",
+                     subgroup = diabetes.1.setting$Setting,
+                    test.subgroup = T, pscale = 100, )
+summary(pool.DM.3)
+
+
+
+###forest plot for diabetes subgroup setting
+
+forest_setting_DM <- forest.meta(pool.DM.3,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,80), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+## save forest plot
+png(file = "forest-DM_2.png", width = 2250, height = 2350, res = 300)
+forest_setting_DM
+dev.off()
+
+
+##### meta analysis for diabetes: studies subgrouped by STUDY PERIOD: <=2012 vs >2012
+pool.DM.4 <- metaprop(event = diabetes.1$N,n=diabetes.1$size,
+                      fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                      sm = "PLOGIT", hakn = T, studlab = diabetes.1$Author,
+                      overall = T, overall.hetstat = T,
+                      method.bias = "Egger",backtransf = T,
+                      text.random = "RE Prevalence",
+                      subgroup = diabetes.1$Study_Period,
+                      test.subgroup = T, pscale = 100, )
+summary(pool.DM.4)
+
+###forest plot for diabetes subgroup study period
+
+forest_Studyperiod_DM <- forest.meta(pool.DM.4,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(16,"mm"),
+            lwd = 2,colgap.left = unit(1,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(0,45), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+## save forest plot
+png(file = "forest-DM_period.png", width = 2250, height = 2350, res = 300)
+forest_Studyperiod_DM
+dev.off()
+
+#### MA for diabetes: studies subgrouped by sex
+DM_sex<- NCD.dat%>%filter(NCD=="diabetes", !is.na(Sex))
+View(DM_sex)
+
+pool.DM.sex <- metaprop(event = DM_sex$N,n=DM_sex$size,
+                      fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                      sm = "PLOGIT", hakn = T, studlab = DM_sex$Author,
+                      overall = T, overall.hetstat = T,
+                      method.bias = "Egger",backtransf = T,
+                      text.random = "RE Prevalence",
+                      subgroup = DM_sex$Sex,
+                      test.subgroup = T, pscale = 100, )
+summary(pool.DM.sex)
+
+## forest plot
+forest_sex_DM <- forest.meta(pool.DM.sex,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(16,"mm"),
+            lwd = 2,colgap.left = unit(1,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(0,45), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+## save forest plot
+png(file = "forest-DM_sex.png", width = 2800, height = 2700, res = 300)
+forest_sex_DM
+dev.off()
+
+
+```
+
+## HYPERTENTION
+```{r}
+### subset out articles on hypertension
+
+HPT.1 <- NCD.dat%>%filter(NCD=="HPT")
+
+#### remove studies on pregnant/postpartum participants
+HPT.1 <- HPT.1 %>% filter(pregnant!="pregnant/PP")
+
+## Summarize the data by sub-groups/ variables of interest
+HPT.1 <- HPT.1%>%
+  group_by(Author, Setting, Province,Study_Period, `Diagnostic criteria`, ROB, ART_status)%>%
+  summarise(N=sum(N), size=sum(size))
+View(HPT.1) # view the dataset
+
+##### remove articles that did not reported ART status and those where ART status could not be deduced
+HPT.ART <- HPT.1 %>% filter(ART_status!="unreported" & ART_status!="initiated and uninitiated")
+
+
+##### meta analysis for hypertension:  studies sub grouped by ART status (intiated vs not initiated)
+pool.HPT.ART <- metaprop(event = HPT.ART$N,n=HPT.ART$size,
+                          fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                          sm = "PLOGIT", hakn = T, studlab = HPT.ART$Author,
+                          overall = T, overall.hetstat = T,
+                          method.bias = "Egger",backtransf = T,
+                          text.random = "RE Prevalence",
+                          subgroup = HPT.ART$ART_status,
+                          test.subgroup = T, pscale = 100, )
+summary(pool.HPT.ART)
+
+
+###forest plot for HPT: studies sub grouped by ART status (intiated vs not initiated)
+
+forest_ARTstatus_HPT <- forest.meta(pool.HPT.ART,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI]"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,100), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+#save forest plot
+png(file = "ART_forest-HPT.png", width = 2800, height = 2800, res = 300)
+forest_ARTstatus_HPT
+dev.off()
+
+
+##### meta analysis for hypertension subgroup diagnostics
+pool.HPT.diag <- metaprop(event = HPT.1$N,n=HPT.1$size,
+                         fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                         sm = "PLOGIT", hakn = T, studlab = HPT.1$Author,
+                         overall = T, overall.hetstat = T,
+                         method.bias = "Egger",backtransf = T,
+                         text.random = "RE Prevalence",
+                         subgroup = HPT.1$`Diagnostic criteria`,
+                         test.subgroup = T, pscale = 100, )
+summary(pool.HPT.diag)
+
+
+###forest plot for HPT subgroup diagnostics
+
+forest_diagnostic_HPT <- forest.meta(pool.HPT.diag,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,100), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+#save forest plot
+png(file = "Diagnostics_forest-HPT.png", width = 2800, height = 2800, res = 300)
+forest_diagnostic_HPT
+dev.off()
+
+
+
+##### meta analysis for hypertension: studies  subgrouped by setting (urban, rural)
+## filter out by studies the were both in urban and rural settings
+HPT.setting <- HPT.1%>%filter(Setting!="Urban_Rural")
+
+pool.HPT.3 <- metaprop(event = HPT.setting$N,n=HPT.setting$size,
+                      fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                      sm = "PLOGIT", hakn = T, studlab = HPT.setting$Author,
+                      overall = T, overall.hetstat = T,
+                      method.bias = "Egger",backtransf = T,
+                      text.random = "RE Prevalence",
+                      subgroup = HPT.setting$Setting,
+                      test.subgroup = T, pscale = 100, )
+summary(pool.HPT.3)
+
+###forest plot for HPT subgroup setting
+
+forest_setting_HPT <- forest.meta(pool.HPT.3,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,100), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+# save forest plot
+png(file = "forest-HPT_2.png", width = 2800, height = 2800, res = 300)
+forest_setting_HPT
+dev.off()
+
+
+##### meta analysis for hypertension subgroup STUDY PERIOD
+pool.HPT.4 <- metaprop(event = HPT.1$N,n=HPT.1$size,
+                       fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                       sm = "PLOGIT", hakn = T, studlab = HPT.1$Author,
+                       overall = T, overall.hetstat = T,
+                       method.bias = "Egger",backtransf = T,
+                       text.random = "RE Prevalence",
+                       subgroup = HPT.1$Study_Period,
+                       test.subgroup = T, pscale = 100, )
+summary(pool.HPT.4)
+
+###forest plot for HPT subgroup STUDY PERIOD
+
+forest_studyperiod_HPT <- forest.meta(pool.HPT.4,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,60), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+#save forest plot
+png(file = "forest-HPT_period.png", width = 2800, height = 2700, res = 300)
+forest_studyperiod_HPT
+dev.off()
+
+
+### ##### meta analysis for hypertension subgroup by sex
+
+HPT_sex<- NCD.dat%>%filter(NCD=="HPT", !is.na(Sex))
+View(HPT_sex)
+HPT_sex <- HPT_sex%>%filter(pregnant!="pregnant/PP")
+
+pool.HPT.sex <- metaprop(event = HPT_sex$N,n=HPT_sex$size,
+                        fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                        sm = "PLOGIT", hakn = T, studlab = HPT_sex$Author,
+                        overall = T, overall.hetstat = T,
+                        method.bias = "Egger",backtransf = T,
+                        text.random = "RE Prevalence",
+                        subgroup = HPT_sex$Sex,
+                        test.subgroup = T, pscale = 100, )
+summary(pool.HPT.sex)
+
+## forest plot
+forest_sex_HPT <- forest.meta(pool.HPT.sex,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(16,"mm"),
+            lwd = 2,colgap.left = unit(1,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(0,80), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+
+# save forest plot
+png(file = "forest-HPT_sex.png", width = 2800, height = 3300, res = 300)
+forest_sex_HPT
+dev.off()
+```
+
+
+## OBESITY
+```{r}
+##### subset out articles on OBESITY
+obes.1 <- NCD.dat%>%filter(NCD=="obesity")
+
+## remove studies on pregnant/postpartum participants
+
+obes.1 <- obes.1%>%filter(pregnant!="pregnant/PP")
+
+## Summarize the data by sub-groups/ variables of interest
+obes.1 <- obes.1%>%
+  group_by(Author, Setting, Province,Study_Period, ROB, ART_status)%>%
+  summarise(N=sum(N), size=sum(size))
+View(obes.1) # view the data
+
+
+##### ##### remove articles that did not reported ART status and those where ART status could not be deduced
+obes.ART <- obes.1 %>% filter(ART_status!="unreported" & ART_status!="initiated and uninitiated")
+
+##### meta analysis for obesity subgroup ART status
+pool.obes.ART<- metaprop(event = obes.ART$N,n=obes.ART$size,
+                         fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                         sm = "PLOGIT", hakn = T, studlab = obes.ART$Author,
+                         overall = T, overall.hetstat = T,
+                         method.bias = "Egger",backtransf = T,
+                         text.random = "RE Prevalence",
+                         subgroup = obes.ART$ART_status,
+                         test.subgroup = T, pscale = 100, )
+summary(pool.obes.ART)
+
+
+###forest plot for obesity subgroup ART
+
+forest_ARTstatus_obsesity <-forest.meta(pool.obes.ART,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI]"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,60), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+#save forest plot
+png(file = "ART_forest-obes.png", width = 2800, height = 2600, res = 300)
+forest_ARTstatus_obsesity
+dev.off()
+
+
+### Remove studies conducted in both urban and rural settings
+obes.setting <- obes.1%>%filter(Setting!="Urban_Rural")
+
+##### meta analysis for obesity subgroup setting (urban, rural)
+pool.obes.3 <- metaprop(event = obes.setting$N,n=obes.setting$size,
+                       fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                       sm = "PLOGIT", hakn = T, studlab = obes.setting$Author,
+                       overall = T, overall.hetstat = T,
+                       method.bias = "Egger",backtransf = T,
+                       text.random = "RE Prevalence",
+                       subgroup = obes.setting$Setting,
+                       test.subgroup = T, pscale = 100, )
+summary(pool.obes.3)
+
+###forest plot for obesity subgroup setting
+
+forest_setting_obesity <- forest.meta(pool.obes.3,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,60), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+#save forest plot
+png(file = "forest-obes_setting.png", width = 2800, height = 2600, res = 300)
+forest_setting_obesity
+dev.off()
+
+
+##### meta analysis for obesity subgroup STUDY PERIOD
+pool.obes.4 <- metaprop(event = obes.1$N,n=obes.1$size,
+                        fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                        sm = "PLOGIT", hakn = T, studlab = obes.1$Author,
+                        overall = T, overall.hetstat = T,
+                        method.bias = "Egger",backtransf = T,
+                        text.random = "RE Prevalence",
+                        subgroup = obes.1$Study_Period,
+                        test.subgroup = T, pscale = 100, )
+
+summary(pool.obes.4)
+
+###forest plot for obesity subgroup study period
+
+forest_studyperiod_obesity <- forest.meta(pool.obes.4,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(13,"mm"),
+            lwd = 2,colgap.left = unit(3,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(-10,60), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+# save forest plot
+png(file = "forest-obes_period.png", width = 2800, height = 2600, res = 300)
+forest_studyperiod_obesity
+dev.off()
+
+
+### meta analysis for obesity subgroup by sex
+
+obes_sex<- NCD.dat%>%filter(NCD=="obesity", !is.na(Sex))
+
+obes_sex <- obes_sex%>%filter(pregnant!="pregnant/PP") #remove pregnant people
+
+## meta analysis by sex
+pool.obes.sex <- metaprop(event = obes_sex$N,n=obes_sex$size,
+                         fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                         sm = "PLOGIT", hakn = T, studlab = obes_sex$Author,
+                         overall = T, overall.hetstat = T,
+                         method.bias = "Egger",backtransf = T,
+                         text.random = "RE Prevalence",
+                         subgroup = obes_sex$Sex,
+                         test.subgroup = T, pscale = 100, )
+summary(pool.obes.sex)
+
+## forest plot
+forest_sex_obesity <- forest.meta(pool.obes.sex,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(16,"mm"),
+            lwd = 2,colgap.left = unit(1,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(0,70), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+## save forest plot
+png(file = "forest-obes_sex.png", width = 2800, height = 3300, res = 300)
+forest_sex_obesity
+dev.off()
+
+
+##### Meta analysis comparing obesity prevalence in studies which included pregnant people and those the considered non-pregnant people
+
+obes_preg<- NCD.dat%>%filter(NCD=="obesity",Sex=="Females", !is.na(pregnant))
+View(obes_preg)
+
+pool.obes.preg <- metaprop(event = obes_preg$N,n=obes_preg$size,
+                          fixed = F, random = T, method = "Inverse", method.tau = "DL",
+                          sm = "PLOGIT", hakn = T, studlab = obes_preg$Author,
+                          overall = T, overall.hetstat = T,
+                          method.bias = "Egger",backtransf = T,
+                          text.random = "RE Prevalence",
+                          subgroup = obes_preg$pregnant,
+                          test.subgroup = T, pscale = 100, )
+summary(pool.obes.preg)
+
+
+# forest plot comparing obesity prevalence in studies which included pregnant people and those the considered unpregnant people
+forest_pregnant_obesity <- forest.meta(pool.obes.preg,sortvar = event, studlab =T,
+            layout = "RevMan5",backtransf =T, digits = 1,
+            fs.random = 10, fs.heading = 10, fs.study = 10,
+            leftcols =c("studlab","n","effect","ci"), 
+            leftlabs = c("Author,Year","Sample","Prevalence %","[95% CI"),
+            fs.test.overall = 10, fs.hetstat = 10, fs.test.effect.subgroup = 10,
+            squaresize = 0.5,rightcols = F, colgap.forest.left = unit(16,"mm"),
+            lwd = 2,colgap.left = unit(1,"mm"),
+            smlab = "Prevalence %", just = "center", pscale = 100,
+            xlim =c(0,70), col.study = "black",
+            col.square = "black",col.square.lines = "black",
+            col.diamond = "red",col.diamond.lines = "red",col.diamond.random = "red",
+            col.label.left = "black",ff.random.labels = "bold",
+            ff.hetstat = "bold",ff.test.subgroup = "bold",ff.study.labels = "plain",
+            col.by = "black",
+            text.random.w = "Subgroup Prevalence", text.random = "Overall Prevalence")
+## save forest plot
+png(file = "forest-obes_preg.png", width = 2800, height = 3300, res = 300)
+forest_pregnant_obesity
+dev.off()
+
+```
+
+
+
