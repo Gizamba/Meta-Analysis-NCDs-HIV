@@ -1,2 +1,4 @@
 # NCD_HIV
-Repository of of the systematic review and meta analysis about NCDs among HIV patients in South Africa
+Repository for the data and meta analysis R code for the Study i conducted titled "Prevalence of obesity, hypertension and diabetes among people living with HIV in South Africa: a systematic review and meta-analysis"
+
+
